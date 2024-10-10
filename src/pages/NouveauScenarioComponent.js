@@ -10,8 +10,6 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedBubbleId, setSelectedBubbleId] = useState(null);
   const [zoom, setZoom] = useState(1);
-  const [isCreatingConnection, setIsCreatingConnection] = useState(false);
-  const [connectionStart, setConnectionStart] = useState(null);
   const mainRef = useRef(null);
 
   const menuItems = [
@@ -54,10 +52,8 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
   }, []);
 
   const handleMouseDown = (e, bubbleId) => {
-    if (!isCreatingConnection) {
-      setIsDragging(true);
-      setDraggedBubbleId(bubbleId);
-    }
+    setIsDragging(true);
+    setDraggedBubbleId(bubbleId);
   };
 
   const handleMouseMove = (e) => {
@@ -81,53 +77,11 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
         })
       );
     }
-    if (isCreatingConnection) {
-      setConnections(prevConnections => {
-        const updatedConnections = [...prevConnections];
-        const lastConnection = updatedConnections[updatedConnections.length - 1];
-        if (lastConnection) {
-          lastConnection.endX = e.clientX;
-          lastConnection.endY = e.clientY;
-        }
-        return updatedConnections;
-      });
-    }
   };
 
-  const handleMouseUp = (e) => {
-    if (isDragging) {
-      setIsDragging(false);
-      setDraggedBubbleId(null);
-    }
-    if (isCreatingConnection) {
-      const endBubble = bubbles.find(bubble => 
-        Math.abs(bubble.x + bubble.size / 2 - e.clientX) < bubble.size / 2 &&
-        Math.abs(bubble.y + bubble.size / 2 - e.clientY) < bubble.size / 2 &&
-        bubble.id !== connectionStart.from
-      );
-      if (endBubble) {
-        setConnections(prevConnections => {
-          const existingConnection = prevConnections.find(
-            conn => conn.from === connectionStart.from && conn.to === endBubble.id
-          );
-          if (existingConnection) {
-            return prevConnections.filter(conn => conn.id !== prevConnections[prevConnections.length - 1].id);
-          }
-          const updatedConnections = [...prevConnections];
-          updatedConnections[updatedConnections.length - 1] = {
-            ...updatedConnections[updatedConnections.length - 1],
-            to: endBubble.id,
-            endX: endBubble.x + endBubble.size / 2,
-            endY: endBubble.y + endBubble.size / 2
-          };
-          return updatedConnections;
-        });
-      } else {
-        setConnections(prevConnections => prevConnections.slice(0, -1));
-      }
-      setIsCreatingConnection(false);
-      setConnectionStart(null);
-    }
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setDraggedBubbleId(null);
   };
 
   const handleWheel = (e) => {
@@ -161,16 +115,6 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
             : bubble
         )
       );
-      const pendingConnection = connections.find(conn => conn.to === null);
-      if (pendingConnection) {
-        setConnections(prevConnections => 
-          prevConnections.map(conn => 
-            conn.id === pendingConnection.id 
-              ? { ...conn, to: selectedBubbleId }
-              : conn
-          )
-        );
-      }
     } else {
       const newBubble = {
         id: Date.now(),
@@ -184,26 +128,6 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     }
     setShowMenu(false);
     setSelectedBubbleId(null);
-  };
-
-  const handleAddConnection = (bubbleId, e) => {
-    e.stopPropagation();
-    const startBubble = bubbles.find(b => b.id === bubbleId);
-    setIsCreatingConnection(true);
-    setConnectionStart({
-      from: bubbleId,
-      startX: startBubble.x + startBubble.size / 2,
-      startY: startBubble.y + startBubble.size / 2,
-    });
-    setConnections(prevConnections => [...prevConnections, {
-      id: Date.now(),
-      from: bubbleId,
-      to: null,
-      startX: startBubble.x + startBubble.size / 2,
-      startY: startBubble.y + startBubble.size / 2,
-      endX: startBubble.x + startBubble.size / 2,
-      endY: startBubble.y + startBubble.size / 2
-    }]);
   };
 
   const handlePlusClick = (bubbleId, e) => {
@@ -239,6 +163,15 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     );
   };
 
+  const isBubbleConnected = (bubbleId) => {
+    return connections.some(conn => conn.from === bubbleId || conn.to === bubbleId);
+  };
+
+  const isLastConnectedBubble = (bubbleId) => {
+    const outgoingConnections = connections.filter(conn => conn.from === bubbleId);
+    return outgoingConnections.length === 0 && isBubbleConnected(bubbleId);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-gray-50 text-gray-800 font-sans flex flex-col">
       {/* Header */}
@@ -264,11 +197,10 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
               <line
                 x1={conn.startX}
                 y1={conn.startY}
-                x2={conn.to ? conn.endX : (isCreatingConnection ? connectionStart.endX : conn.endX)}
-                y2={conn.to ? conn.endY : (isCreatingConnection ? connectionStart.endY : conn.endY)}
+                x2={conn.endX}
+                y2={conn.endY}
                 stroke="gray"
                 strokeWidth="2"
-                strokeDasharray={!conn.to || isCreatingConnection ? "5,5" : "none"}
                 className="pointer-events-auto"
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -294,10 +226,13 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
               {bubble.type && (
                 <div
                   className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 bg-purple-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer"
-                  onMouseDown={(e) => handleAddConnection(bubble.id, e)}
                   onClick={(e) => handlePlusClick(bubble.id, e)}
                 >
-                  <PlusCircle className="w-4 h-4 text-white" />
+                  {!isBubbleConnected(bubble.id) || isLastConnectedBubble(bubble.id) ? (
+                    <PlusCircle className="w-4 h-4 text-white" />
+                  ) : (
+                    <div className="w-4 h-4 bg-white rounded-full"></div>
+                  )}
                 </div>
               )}
             </div>
@@ -327,58 +262,59 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
                     {item.subItems.map((subItem, subIndex) => (
                       <li 
                         key={subIndex} 
-                        className="cursor-pointer hover:bg-gray-100 p-2 rounded flex items-center"onClick={() => handleMenuItemClick(item.category, subItem)}
-                        >
-                          <span className="mr-2">{subItem.icon}</span>
-                          <span>{subItem.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </main>
-  
-        {/* Footer */}
-        <footer className="border-t border-gray-200 bg-white p-4">
-          <div className="flex justify-between items-center max-w-7xl mx-auto">
-            <button className="bg-purple-600 text-white px-6 py-3 rounded-md flex items-center shadow-md hover:bg-purple-700 transition-colors">
-              <Play className="w-5 h-5 mr-2" />
-              <span className="font-medium">Exécuter une fois</span>
-            </button>
-  
-            <div className="flex items-center">
-              <span className="mr-4 text-xs font-medium text-gray-500">PLANIFICATION</span>
-              <div className="flex items-center bg-gray-100 rounded-full p-1">
-                <span className="px-3 py-1 text-sm text-gray-500">DÉSACTIVÉ</span>
-                <div className="flex items-center bg-white rounded-full px-3 py-1 ml-1 shadow-sm">
+                        className="cursor-pointer hover:bg-gray-100 p-2 rounded flex items-center"
+                        onClick={() => handleMenuItemClick(item.category, subItem)}
+                      >
+                        <span className="mr-2">{subItem.icon}</span>
+                        <span>{subItem.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-200 bg-white p-4">
+        <div className="flex justify-between items-center max-w-7xl mx-auto">
+          <button className="bg-purple-600 text-white px-6 py-3 rounded-md flex items-center shadow-md hover:bg-purple-700 transition-colors">
+            <Play className="w-5 h-5 mr-2" />
+            <span className="font-medium">Exécuter une fois</span>
+          </button>
+
+          <div className="flex items-center">
+            <span className="mr-4 text-xs font-medium text-gray-500">PLANIFICATION</span>
+            <div className="flex items-center bg-gray-100 rounded-full p-1">
+              <span className="px-3 py-1 text-sm text-gray-500">DÉSACTIVÉ</span>
+              <div className="flex items-center bg-white rounded-full px-3 py-1 ml-1 shadow-sm">
                 <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                  <span className="text-sm">Toutes les 15 minutes</span>
-                </div>
+                <span className="text-sm">Toutes les 15 minutes</span>
               </div>
             </div>
-  
-            <div className="flex items-center">
-              <span className="mr-4 text-xs font-medium text-gray-500">CONTRÔLES</span>
-              <Settings className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
-              <FileText className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
-              <Edit className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
-              <Plane className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
-              <MoreHorizontal className="w-5 h-5 text-gray-400 cursor-pointer" />
-            </div>
           </div>
-        </footer>
-  
-        {/* AI Beta button */}
-        <div className="absolute top-4 right-4">
-          <button className="bg-purple-600 text-white px-3 py-1 rounded-md text-sm flex items-center shadow-md hover:bg-purple-700 transition-colors">
-            AI <span className="ml-1 px-1 bg-white text-purple-600 text-xs rounded font-medium">BÊTA</span>
-          </button>
+
+          <div className="flex items-center">
+            <span className="mr-4 text-xs font-medium text-gray-500">CONTRÔLES</span>
+            <Settings className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
+            <FileText className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
+            <Edit className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
+            <Plane className="w-5 h-5 mr-4 text-gray-400 cursor-pointer" />
+            <MoreHorizontal className="w-5 h-5 text-gray-400 cursor-pointer" />
+          </div>
         </div>
+      </footer>
+
+      {/* AI Beta button */}
+      <div className="absolute top-4 right-4">
+        <button className="bg-purple-600 text-white px-3 py-1 rounded-md text-sm flex items-center shadow-md hover:bg-purple-700 transition-colors">
+          AI <span className="ml-1 px-1 bg-white text-purple-600 text-xs rounded font-medium">BÊTA</span>
+        </button>
       </div>
-    );
-  };
-  
-  export default NouveauScenarioComponent;
+    </div>
+  );
+};
+
+export default NouveauScenarioComponent;
