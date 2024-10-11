@@ -4,7 +4,7 @@ import DépêchesPage from './pages/DepechesPage';
 import CartographiePage from './pages/CartographiePage';
 import InfoEcoPage from './pages/InfoEcoPage';
 import WebTVPage from './pages/WebTVPage';
-import SiBotPage from './pages/SiBotPage';
+import SiBotPage from './pages/SibotPage';
 import './App.css';
 
 function App() {

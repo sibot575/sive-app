@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, ChevronDown, Settings, Clock, Folder, Copy, Trash2, X } from 'lucide-react';
-import NouveauScenarioComponent from './NouveauScenarioComponent';
+import NouveauScenarioComponent from './BubbleCanvas';
 
 const SibotMainPage = () => {
   const [ongletActif, setOngletActif] = useState('TOUS');
