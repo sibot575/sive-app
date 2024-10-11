@@ -13,6 +13,7 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
   const [showModuleSelector, setShowModuleSelector] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [selectedModuleItem, setSelectedModuleItem] = useState(null);
+  const [parentModuleId, setParentModuleId] = useState(null);
   const mainRef = useRef(null);
 
   const moduleItems = [
@@ -51,8 +52,9 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
         y: mainRect.height / 2 - 50,
         width: 150,
         height: 100,
-        type: null,
-        icon: '+'
+        type: 'Main',
+        icon: '🕒',
+        isMain: true
       }]);
     }
   }, []);
@@ -96,16 +98,26 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     setZoom(Math.max(0.5, Math.min(2, newZoom)));
   };
 
-  const handleContextMenu = (e) => {
+  const handleContextMenu = (e, moduleId = null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowMenu(true);
+    setMenuPosition({ x: e.clientX, y: e.clientY });
+    setParentModuleId(moduleId);
+    setSelectedModuleId(null);
+  };
+
+  const handleBackgroundContextMenu = (e) => {
     e.preventDefault();
     setShowMenu(true);
     setMenuPosition({ x: e.clientX, y: e.clientY });
+    setParentModuleId(null);
     setSelectedModuleId(null);
   };
 
   const handleModuleClick = (moduleId) => {
     const module = modules.find(m => m.id === moduleId);
-    if (!module.type) {
+    if (!module.type || module.type === 'Main') {
       setSelectedModuleId(moduleId);
       setShowMenu(true);
       setMenuPosition({ x: module.x + module.width, y: module.y });
@@ -120,7 +132,7 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     };
   };
 
-  const addNewModule = (subItem) => {
+  const addNewModule = (subItem, parentId = null) => {
     if (!mainRef.current) return null;
     
     const mainRect = mainRef.current.getBoundingClientRect();
@@ -137,6 +149,20 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     };
     
     setModules(prevModules => [...prevModules, newModule]);
+
+    if (parentId) {
+      const parentModule = modules.find(m => m.id === parentId);
+      setConnections(prevConnections => [...prevConnections, {
+        id: Date.now(),
+        from: parentId,
+        to: newModule.id,
+        startX: parentModule.x + parentModule.width / 2,
+        startY: parentModule.y + parentModule.height / 2,
+        endX: newModule.x + newModule.width / 2,
+        endY: newModule.y + newModule.height / 2
+      }]);
+    }
+    
     return newModule;
   };
 
@@ -159,25 +185,12 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
 
   const handleModuleConfirmation = (confirmed) => {
     if (confirmed && selectedModuleItem) {
-      const newModule = addNewModule(selectedModuleItem);
-      if (newModule && modules.length > 0) {
-        const lastModule = modules.find(m => isLastConnectedModule(m.id));
-        if (lastModule) {
-          setConnections(prevConnections => [...prevConnections, {
-            id: Date.now(),
-            from: lastModule.id,
-            to: newModule.id,
-            startX: lastModule.x + lastModule.width / 2,
-            startY: lastModule.y + lastModule.height / 2,
-            endX: newModule.x + newModule.width / 2,
-            endY: newModule.y + newModule.height / 2
-          }]);
-        }
-      }
+      addNewModule(selectedModuleItem, parentModuleId);
     }
     setShowConfirmation(false);
     setSelectedModuleItem(null);
     setShowModuleSelector(false);
+    setParentModuleId(null);
   };
 
   const handlePlusClick = (moduleId, e) => {
@@ -198,9 +211,9 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
       id: Date.now(),
       from: moduleId,
       to: newModuleId,
-      startX: startModule.x + startModule.width / 2,
+      startX: startModule.x + startModule.width,
       startY: startModule.y + startModule.height / 2,
-      endX: startModule.x + 200 + 75,
+      endX: startModule.x + 200,
       endY: startModule.y + 50
     }]);
     setSelectedModuleId(newModuleId);
@@ -223,6 +236,11 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
     return outgoingConnections.length === 0 && isModuleConnected(moduleId);
   };
 
+  const handleConnectionContextMenu = (e, connectionId) => {
+    e.preventDefault();
+    handleDeleteConnection(connectionId);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-gray-100 text-gray-900 font-sans flex flex-col">
       {/* Header */}
@@ -240,7 +258,7 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        onContextMenu={handleContextMenu}
+        onContextMenu={handleBackgroundContextMenu}
       >
         <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center', height: '100%', width: '100%' }}>
           {connections.map(conn => (
@@ -251,12 +269,18 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
                 x2={conn.endX}
                 y2={conn.endY}
                 stroke="#4A5568"
+                strokeWidth="8"
+                strokeOpacity="0.1"
+                className="pointer-events-auto cursor-pointer"
+                onContextMenu={(e) => handleConnectionContextMenu(e, conn.id)}
+              />
+              <line
+                x1={conn.startX}
+                y1={conn.startY}
+                x2={conn.endX}
+                y2={conn.endY}
+                stroke="#4A5568"
                 strokeWidth="2"
-                className="pointer-events-auto"
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  handleDeleteConnection(conn.id);
-                }}
               />
             </svg>
           ))}
@@ -272,22 +296,47 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
               }}
               onMouseDown={(e) => handleMouseDown(e, module.id)}
               onClick={() => handleModuleClick(module.id)}
+              onContextMenu={(e) => handleContextMenu(e, module.id)}
             >
               <div className="flex flex-col items-center justify-center h-full">
                 <span className="text-2xl mb-2">{module.icon}</span>
                 <span className="text-sm font-medium">{module.type || 'Nouveau module'}</span>
               </div>
-              {module.type && (
-                <div
-                  className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 bg-blue-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer shadow-sm"
-                  onClick={(e) => handlePlusClick(module.id, e)}
-                >
-                  {!isModuleConnected(module.id) || isLastConnectedModule(module.id) ? (
-                    <PlusCircle className="w-4 h-4 text-white" />
-                  ) : (
+              {(module.type && !module.isMain) && (
+                <>
+                  <div
+                    className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 bg-blue-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer shadow-sm"
+                    onClick={(e) => handlePlusClick(module.id, e)}
+                  >
+                    {!isModuleConnected(module.id) || isLastConnectedModule(module.id) ? (
+                      <PlusCircle className="w-4 h-4 text-white" />
+                    ) : (
+                      <div className="w-4 h-4 bg-white rounded-full"></div>
+                    )}
+                  </div>
+                  <div
+                    className="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-blue-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer shadow-sm"
+                  >
                     <div className="w-4 h-4 bg-white rounded-full"></div>
-                  )}
-                </div>
+                  </div>
+                </>
+              )}
+              {module.isMain && (
+                <>
+                  <div
+                    className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 bg-blue-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer shadow-sm"
+                    onClick={(e) => handlePlusClick(module.id, e)}
+                  >
+                    {!isModuleConnected(module.id) || isLastConnectedModule(module.id) ? (
+                      <PlusCircle className="w-4 h-4 text-white" />
+                    ) : (
+                      <div className="w-4 h-4 bg-white rounded-full"></div>
+                    )}
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-blue-500 rounded-full p-1">
+                    <Clock className="w-4 h-4 text-white" />
+                  </div>
+                </>
               )}
             </div>
           ))}
@@ -321,8 +370,7 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
                       >
                         <span className="mr-2">{subItem.icon}</span>
                         <span>{subItem.name}</span>
-                      </li>
-                    ))}
+                      </li>))}
                   </ul>
                 </li>
               ))}
