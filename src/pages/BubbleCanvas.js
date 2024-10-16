@@ -438,6 +438,12 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         onContextMenu={handleBackgroundContextMenu}
+        style={{
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none'
+        }}
       >
         <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center', height: '100%', width: '100%' }}>
           {connections.map(conn => (
@@ -484,7 +490,7 @@ const NouveauScenarioComponent = ({ onClose, onSave }) => {
                 left: `${module.x}px`,
                 top: `${module.y}px`,
                 width: `${module.width}px`,
-                height: `${module.height + 40}px`, // Increased height to accommodate title and description
+                height: `${module.height + 40}px`,
               }}
             >
               <div
