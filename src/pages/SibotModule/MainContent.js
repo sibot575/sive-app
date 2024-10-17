@@ -34,6 +34,8 @@ const MainContent = ({
   const [showDataContainer, setShowDataContainer] = useState(false);
   const [containerPosition, setContainerPosition] = useState({ x: 0, y: 0 });
   const [selectedData, setSelectedData] = useState([]);
+  const [isDraggingEmptyCircle, setIsDraggingEmptyCircle] = useState(false);
+  const [draggedEmptyCircleStart, setDraggedEmptyCircleStart] = useState(null);
 
   const moduleItems = [
     { 
@@ -116,6 +118,14 @@ const MainContent = ({
         endX: clientX,
         endY: clientY
       });
+    } else if (isDraggingEmptyCircle) {
+      const { clientX, clientY } = e;
+      setTempConnection({
+        startX: draggedEmptyCircleStart.x,
+        startY: draggedEmptyCircleStart.y,
+        endX: clientX,
+        endY: clientY
+      });
     }
   };
 
@@ -141,6 +151,23 @@ const MainContent = ({
           endY: targetModule.y + targetModule.height / 2
         });
       }
+    } else if (isDraggingEmptyCircle) {
+      const { clientX, clientY } = e;
+      const targetModule = modules.find(module => 
+        clientX >= module.x && 
+        clientX <= module.x + module.width && 
+        clientY >= module.y && 
+        clientY <= module.y + module.height &&
+        module.id !== draggedEmptyCircleStart.moduleId
+      );
+
+      if (targetModule && targetModule.isMain) {
+        createRouterAndConnect(draggedEmptyCircleStart.moduleId, targetModule.id);
+      } else if (targetModule && targetModule.type === 'Router') {
+        connectToExistingRouter(draggedEmptyCircleStart.moduleId, targetModule.id);
+      } else if (targetModule) {
+        createNewRouterAndConnect(draggedEmptyCircleStart.moduleId, targetModule.id);
+      }
     }
 
     setIsDragging(false);
@@ -148,7 +175,212 @@ const MainContent = ({
     setIsDraggingClock(false);
     setIsDraggingConnection(false);
     setDraggedConnectionStart(null);
+    setIsDraggingEmptyCircle(false);
+    setDraggedEmptyCircleStart(null);
     setTempConnection(null);
+  };
+  const createRouterAndConnect = (fromModuleId, toModuleId) => {
+    const fromModule = modules.find(m => m.id === fromModuleId);
+    const toModule = modules.find(m => m.id === toModuleId);
+  
+    // Vérifier si un routeur existe déjà pour le module de destination
+    const existingRouter = modules.find(m => 
+      m.type === 'Router' && 
+      connections.some(conn => conn.from === toModuleId && conn.to === m.id)
+    );
+  
+    if (existingRouter) {
+      // Si un routeur existe déjà, créer un nouveau routeur à côté
+      createAdjacentRouter(fromModuleId, existingRouter.id);
+    } else {
+      // Logique existante pour créer un nouveau routeur
+      // Identifier toutes les connexions existantes de la bulle avec l'horloge
+      const existingConnections = connections.filter(conn => 
+        conn.from === toModuleId || conn.to === toModuleId
+      );
+    
+      // Calculer la position moyenne de toutes les connexions
+      let totalX = fromModule.x + toModule.x;
+      let totalY = fromModule.y + toModule.y;
+      let connectionCount = 2; // Commencer à 2 pour inclure fromModule et toModule
+    
+      existingConnections.forEach(conn => {
+        const connectedModule = modules.find(m => 
+          m.id === (conn.from === toModuleId ? conn.to : conn.from)
+        );
+        if (connectedModule) {
+          totalX += connectedModule.x;
+          totalY += connectedModule.y;
+          connectionCount++;
+        }
+      });
+    
+      const avgX = totalX / connectionCount;
+      const avgY = totalY / connectionCount;
+    
+      const routerModule = {
+        id: Date.now(),
+        x: avgX - 40, // Centrer le routeur (80x80)
+        y: avgY - 40,
+        width: 80,
+        height: 80,
+        type: 'Router',
+        icon: '🔀',
+        isMain: false,
+        description: 'Module de routage',
+        status: 'configured',
+        searchTerm: '',
+        advancedSettings: {}
+      };
+    
+      onAddModule(routerModule);
+    
+      // Connecter le routeur à la bulle avec l'horloge
+      onAddConnection({
+        id: Date.now(),
+        from: toModuleId,
+        to: routerModule.id,
+        startX: toModule.x + toModule.width / 2,
+        startY: toModule.y + toModule.height / 2,
+        endX: routerModule.x + routerModule.width / 2,
+        endY: routerModule.y + routerModule.height / 2
+      });
+    
+      // Connecter le routeur à la bulle d'origine
+      onAddConnection({
+        id: Date.now(),
+        from: routerModule.id,
+        to: fromModuleId,
+        startX: routerModule.x + routerModule.width / 2,
+        startY: routerModule.y + routerModule.height / 2,
+        endX: fromModule.x + fromModule.width / 2,
+        endY: fromModule.y + fromModule.height / 2
+      });
+    
+      // Connecter le routeur aux autres bulles existantes
+      existingConnections.forEach(conn => {
+        const connectedModuleId = conn.from === toModuleId ? conn.to : conn.from;
+        if (connectedModuleId !== fromModuleId) {
+          const connectedModule = modules.find(m => m.id === connectedModuleId);
+          onAddConnection({
+            id: Date.now(),
+            from: routerModule.id,
+            to: connectedModuleId,
+            startX: routerModule.x + routerModule.width / 2,
+            startY: routerModule.y + routerModule.height / 2,
+            endX: connectedModule.x + connectedModule.width / 2,
+            endY: connectedModule.y + connectedModule.height / 2
+          });
+        }
+      });
+    
+      // Supprimer les connexions directes existantes avec la bulle horloge
+      existingConnections.forEach(conn => {
+        onDeleteConnection(conn.id);
+      });
+    }
+  };
+
+  const createAdjacentRouter = (fromModuleId, existingRouterId) => {
+    const fromModule = modules.find(m => m.id === fromModuleId);
+    const existingRouter = modules.find(m => m.id === existingRouterId);
+
+    // Créer un nouveau routeur à côté de l'existant
+    const newRouter = {
+      id: Date.now(),
+      x: existingRouter.x - 100, // Positionner à gauche du routeur existant
+      y: existingRouter.y,
+      width: 80,
+      height: 80,
+      type: 'Router',
+      icon: '🔀',
+      isMain: false,
+      description: 'Module de routage',
+      status: 'configured',
+      searchTerm: '',
+      advancedSettings: {}
+    };
+
+    onAddModule(newRouter);
+
+    // Connecter le nouveau routeur au routeur existant
+    onAddConnection({
+      id: Date.now(),
+      from: newRouter.id,
+      to: existingRouterId,
+      startX: newRouter.x + newRouter.width,
+      startY: newRouter.y + newRouter.height / 2,
+      endX: existingRouter.x,
+      endY: existingRouter.y + existingRouter.height / 2
+    });
+
+    // Connecter le nouveau routeur à la bulle d'origine
+    onAddConnection({
+      id: Date.now(),
+      from: newRouter.id,
+      to: fromModuleId,
+      startX: newRouter.x + newRouter.width / 2,
+      startY: newRouter.y + newRouter.height / 2,
+      endX: fromModule.x + fromModule.width / 2,
+      endY: fromModule.y + fromModule.height / 2
+    });
+  };
+
+  const connectToExistingRouter = (fromModuleId, routerId) => {
+    const fromModule = modules.find(m => m.id === fromModuleId);
+    const routerModule = modules.find(m => m.id === routerId);
+
+    onAddConnection({
+      id: Date.now(),
+      from: routerId,
+      to: fromModuleId,
+      startX: routerModule.x + routerModule.width / 2,
+      startY: routerModule.y + routerModule.height / 2,
+      endX: fromModule.x + fromModule.width / 2,
+      endY: fromModule.y + fromModule.height / 2
+    });
+  };
+
+  const createNewRouterAndConnect = (fromModuleId, toModuleId) => {
+    const fromModule = modules.find(m => m.id === fromModuleId);
+    const toModule = modules.find(m => m.id === toModuleId);
+
+    const routerModule = {
+      id: Date.now(),
+      x: (fromModule.x + toModule.x) / 2,
+      y: (fromModule.y + toModule.y) / 2,
+      width: 80,
+      height: 80,
+      type: 'Router',
+      icon: '🔀',
+      isMain: false,
+      description: 'Module de routage',
+      status: 'configured',
+      searchTerm: '',
+      advancedSettings: {}
+    };
+
+    onAddModule(routerModule);
+
+    onAddConnection({
+      id: Date.now(),
+      from: routerModule.id,
+      to: fromModuleId,
+      startX: routerModule.x + routerModule.width / 2,
+      startY: routerModule.y + routerModule.height / 2,
+      endX: fromModule.x + fromModule.width / 2,
+      endY: fromModule.y + fromModule.height / 2
+    });
+
+    onAddConnection({
+      id: Date.now(),
+      from: routerModule.id,
+      to: toModuleId,
+      startX: routerModule.x + routerModule.width / 2,
+      startY: routerModule.y + routerModule.height / 2,
+      endX: toModule.x + toModule.width / 2,
+      endY: toModule.y + toModule.height / 2
+    });
   };
 
   const handleWheel = (e) => {
@@ -299,17 +531,28 @@ const MainContent = ({
     });
   };
 
+  const handleEmptyCircleMouseDown = (e, moduleId) => {
+    e.stopPropagation();
+    setIsDraggingEmptyCircle(true);
+    const module = modules.find(m => m.id === moduleId);
+    setDraggedEmptyCircleStart({
+      moduleId,
+      x: module.x,
+      y: module.y + module.height / 2
+    });
+  };
+
+  const shouldShowRightConnector = (module) => {
+    return module.type !== 'Router' && (!isModuleConnected(module.id) || isLastConnectedModule(module.id));
+  };
+
+  // Mise à jour de la fonction shouldShowLeftConnector
   const shouldShowLeftConnector = (module) => {
-    if (module.id === mainModuleId) {
+    if (module.id === mainModuleId || module.type === 'Router') {
       return false;
     }
     return !connections.some(conn => conn.to === module.id);
   };
-
-  const shouldShowRightConnector = (module) => {
-    return !isModuleConnected(module.id) || isLastConnectedModule(module.id);
-  };
-
   const isModuleConnected = (moduleId) => {
     return connections.some(conn => conn.from === moduleId || conn.to === moduleId);
   };
@@ -326,11 +569,10 @@ const MainContent = ({
     setShowConfigureModal(true);
   };
 
-  // Modified canExecuteModule function
   const canExecuteModule = (moduleId) => {
     const module = modules.find(m => m.id === moduleId);
     if (!module) {
-      return false; // Return false if the module doesn't exist
+      return false;
     }
     if (module.status === 'no-data') {
       return false;
@@ -349,13 +591,14 @@ const MainContent = ({
 
   const handleExecute = () => {
     if (canExecuteModule(selectedModuleId)) {
-      // Simulate data generation
-      const generatedData = ['Data 1', 'Data 2', 'Data 3'];
+      const selectedModule = modules.find(m => m.id === selectedModuleId);
+      
+      const executionData = [selectedModule.searchTerm];
       
       setModules(prevModules =>
         prevModules.map(module =>
           module.id === selectedModuleId
-            ? { ...module, status: 'executed', executionData: generatedData }
+            ? { ...module, status: 'executed', executionData: executionData }
             : module
         )
       );
@@ -364,6 +607,7 @@ const MainContent = ({
       alert("Ce module ne peut pas être exécuté. Assurez-vous qu'il a des données et que tous les modules précédents ont été exécutés.");
     }
   };
+
   const handleSearchFocus = (moduleId, event) => {
     const connectedModules = connections
       .filter(conn => conn.to === moduleId)
@@ -533,6 +777,7 @@ const MainContent = ({
                   <div
                     className="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-blue-500 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer shadow-sm"
                     style={{ top: `${module.height / 2}px` }}
+                    onMouseDown={(e) => handleEmptyCircleMouseDown(e, module.id)}
                   >
                     <div className="w-4 h-4 bg-white rounded-full"></div>
                   </div>
