@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
+import AuthPage from './components/AuthPage';
 import DépêchesPage from './pages/DepechesPage';
 import CartographiePage from './pages/CartographiePage';
 import InfoEcoPage from './pages/InfoEcoPage';
@@ -7,32 +9,80 @@ import WebTVPage from './pages/WebTVPage';
 import SiBotPage from './pages/SibotPage';
 import './App.css';
 
-function App() {
-  const [currentPage, setCurrentPage] = useState('Accueil');
+const DashboardLayout = ({ isAuthenticated }) => {
+  const navigate = useNavigate();
 
-  const renderPage = () => {
-    switch (currentPage) {
+  const handlePageChange = (pageName) => {
+    switch (pageName) {
       case 'Dépêches':
-        return <DépêchesPage />;
+        navigate('/dashboard/depeches');
+        break;
       case 'Cartographie':
-        return <CartographiePage />;
+        navigate('/dashboard/cartographie');
+        break;
       case 'Info Éco':
-        return <InfoEcoPage />;
+        navigate('/dashboard/info-eco');
+        break;
       case 'WebTV':
-        return <WebTVPage />;
+        navigate('/dashboard/webtv');
+        break;
       case 'SiBot':
-        return <SiBotPage />;
+        navigate('/dashboard/sibot');
+        break;
+      case 'Accueil':
+        navigate('/dashboard');
+        break;
       default:
-        return null;
+        navigate('/dashboard');
     }
   };
 
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div className="App">
-      <Dashboard onPageChange={setCurrentPage}>
-        {renderPage()}
+      <Dashboard onPageChange={handlePageChange}>
+        <Routes>
+          <Route path="/" element={null} /> {/* Page d'accueil du dashboard */}
+          <Route path="/depeches" element={<DépêchesPage />} />
+          <Route path="/cartographie" element={<CartographiePage />} />
+          <Route path="/info-eco" element={<InfoEcoPage />} />
+          <Route path="/webtv" element={<WebTVPage />} />
+          <Route path="/sibot" element={<SiBotPage />} />
+        </Routes>
       </Dashboard>
     </div>
+  );
+};
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  return (
+    <Router>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            isAuthenticated ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <AuthPage onLogin={handleLogin} />
+            )
+          }
+        />
+        <Route
+          path="/dashboard/*"
+          element={<DashboardLayout isAuthenticated={isAuthenticated} />}
+        />
+      </Routes>
+    </Router>
   );
 }
 
